@@ -1,0 +1,23 @@
+{
+  "name": "pi-agent-comfort",
+  "version": "0.1.0",
+  "description": "Three extensions for pi: read-only plan mode with auto-persisted plans, one-line tool output, and a footer that shows your remaining credit next to session cost.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extensions",
+    "plan-mode",
+    "read-only",
+    "tui",
+    "footer",
+    "credits"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "scripts": {
+    "test": "bun test tests/"
+  }
+}
