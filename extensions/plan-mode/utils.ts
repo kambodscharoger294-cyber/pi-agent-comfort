@@ -95,6 +95,7 @@ const SAFE_PATTERNS = [
 	/^\s*fd\b/,
 	/^\s*bat\b/,
 	/^\s*eza\b/,
+	// Optional: read-only subcommands of the mnemon memory CLI, if installed.
 	/^\s*mnemon\s+(recall|search|status|log|related|store\s+list)\b/,
 ];
 

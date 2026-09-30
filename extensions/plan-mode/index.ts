@@ -263,10 +263,9 @@ Restrictions:
 - Built-in edit and write tools are disabled
 - Other currently active tools remain available
 - The subagent tool is disabled - delegated agents would run outside these restrictions
-- Bash is restricted to an allowlist of read-only commands (mnemon only read-only: recall, search, status, log, related, store list)
+- Bash is restricted to an allowlist of read-only commands (ls, cat, head/tail, grep, rg, fd, find, git status/log/diff/branch, npm list, uname, date, …). Read-only subcommands of a local memory CLI (mnemon recall/search/status/log/related/store list) are allowed too, if one is installed.
 
 If something is unclear, ask clarifying questions directly in your response.
-Use brave-search skill via bash for web research.
 
 Create a detailed numbered plan under a "Plan:" header:
 
@@ -277,7 +276,7 @@ Plan:
 
 Do NOT attempt to make changes - just describe what you would do.
 Plans are saved automatically to .pi/plans/plan-*.md - do not try to write files yourself.
-Do not write memories (mnemon remember) while in plan mode; defer memory writes until plan mode is off.
+Do not modify persistent state while in plan mode (memory files, config, indexes) - defer that until plan mode is off.
 Do not use the subagent tool while in plan mode.`,
 					display: false,
 				},
