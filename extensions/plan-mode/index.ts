@@ -135,9 +135,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	// --- Auto-persist plans to markdown files (extension writes, agent stays read-only) ---
 
 	function slugify(text: string): string {
+		// Keep unicode letters (umlauts, CJK, Cyrillic) instead of dropping them —
+		// a German or Japanese plan should still produce a readable filename.
 		const slug = text
 			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/[^\p{L}\p{N}]+/gu, "-")
 			.replace(/^-+|-+$/g, "")
 			.slice(0, 40);
 		return slug || "plan";
@@ -170,7 +172,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		mkdirSync(path.dirname(currentPlanFile), { recursive: true });
 		const progress = todos.map((t) => `- [${t.completed ? "x" : " "}] ${t.step}. ${t.text}`).join("\n");
 		const section = planSectionText(planText);
-		const content = `# Plan: ${todos[0].text}\n\n_Gespeichert: ${new Date().toISOString()}\nDatei: ${currentPlanFile}_\n\n${section ? `${section}\n\n` : ""}## Progress\n\n${progress}\n`;
+		const content = `# Plan: ${todos[0].text}\n\n_Saved: ${new Date().toISOString()}\nFile: ${currentPlanFile}_\n\n${section ? `${section}\n\n` : ""}## Progress\n\n${progress}\n`;
 		writeFileSync(currentPlanFile, content, "utf-8");
 		return currentPlanFile;
 	}
@@ -420,9 +422,12 @@ After completing a step, include a [DONE:n] tag in your response.`;
 			persistState();
 		}
 
-		if (!planModeEnabled || !ctx.hasUI) return;
+		if (!planModeEnabled) return;
 
-		// Extract todos from last assistant message
+		// Extract todos from last assistant message.
+		// This also runs without a UI (headless `-p`, SDK, a chat bridge): a plan
+		// created there is worth keeping on disk too. Only the interactive action
+		// menu below needs a TUI.
 		const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
 		if (lastAssistant) {
 			const planText = getTextContent(lastAssistant);
@@ -431,7 +436,11 @@ After completing a step, include a [DONE:n] tag in your response.`;
 				const isNewPlan = startNewPlanFile || todoItems.length === 0;
 				todoItems = extracted;
 				lastPlanText = planText;
-				persistPlanFile(planText, todoItems, isNewPlan);
+				const saved = persistPlanFile(planText, todoItems, isNewPlan);
+				if (saved) {
+					// Show the file name — a no-op where there is no TUI.
+					ctx.ui?.setStatus?.("plan-mode-file", ctx.ui.theme.fg("muted", `📄 ${path.basename(saved)}`));
+				}
 			} else {
 				// No plan in the last response: drop stale todos so the
 				// "what next?" dialog never shows an outdated plan
@@ -442,7 +451,7 @@ After completing a step, include a [DONE:n] tag in your response.`;
 		}
 		startNewPlanFile = false;
 
-		if (todoItems.length === 0) return;
+		if (todoItems.length === 0 || !ctx.hasUI) return;
 		await showPlanMenu(ctx);
 	});
 
