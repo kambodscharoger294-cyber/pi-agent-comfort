@@ -144,7 +144,12 @@ export function extractTodoItems(message: string): TodoItem[] {
 			.trim()
 			.replace(/\*{1,2}$/, "")
 			.trim();
-		if (text.length > 5 && !text.startsWith("`") && !text.startsWith("/") && !text.startsWith("-")) {
+		// Skip noise lines: slash commands, bare dashes, and lines that are
+		// nothing but an inline-code token ("`npm test`"). A step that merely
+		// *starts* with a backticked path ("`src/app.ts` schreiben – …") is a
+		// perfectly normal step and must be kept.
+		const isOnlyInlineCode = /^`[^`]*`$/.test(text);
+		if (text.length > 5 && !text.startsWith("/") && !text.startsWith("-") && !isOnlyInlineCode) {
 			const cleaned = cleanStepText(text);
 			if (cleaned.length > 3) {
 				items.push({ step: items.length + 1, text: cleaned, completed: false });

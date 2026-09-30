@@ -112,6 +112,16 @@ describe("plan parsing", () => {
 		expect(todos[2].completed).toBe(false);
 	});
 
+	test("keeps steps that start with a backticked path (regression)", () => {
+		// The noise filter used to drop every line starting with a backtick, which
+		// silently lost steps like "2. `src/app.ts` schreiben – …" and made the
+		// progress list shift by one.
+		const text = ["Plan:", "1. Verzeichnis src anlegen", "2. `src/app.ts` schreiben", "3. `npm test`"].join("\n");
+		const todos = extractTodoItems(text);
+		expect(todos.length).toBe(2);
+		expect(todos[1].text).toContain("rc/app.ts"); // cleanStepText capitalises the label
+	});
+
 	test("returns nothing when there is no Plan: header", () => {
 		expect(extractTodoItems("Just a normal answer without a plan.").length).toBe(0);
 	});
