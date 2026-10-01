@@ -131,9 +131,13 @@ export function cleanStepText(text: string): string {
 	return cleaned;
 }
 
+// "Plan:" may carry a title on the same line ("Plan: Fix the loader") —
+// a strict "Plan:\n" requirement silently dropped every such plan.
+export const PLAN_HEADER_RE = /\*{0,2}Plan:\*{0,2}[^\n]*\n/i;
+
 export function extractTodoItems(message: string): TodoItem[] {
 	const items: TodoItem[] = [];
-	const headerMatch = message.match(/\*{0,2}Plan:\*{0,2}\s*\n/i);
+	const headerMatch = message.match(PLAN_HEADER_RE);
 	if (!headerMatch) return items;
 
 	const planSection = message.slice(message.indexOf(headerMatch[0]) + headerMatch[0].length);

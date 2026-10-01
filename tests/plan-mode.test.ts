@@ -1,5 +1,5 @@
 // Throwaway smoke test for the plan_done tool + thinking scan.
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -96,4 +96,18 @@ if (!unknown.output.includes("No plan step 9")) throw new Error("unknown-step gu
 await toggle();
 if (activeTools.includes("plan_done")) throw new Error("plan_done active after toggle-off");
 
-console.log("SMOKE OK — tool activation, thinking scan, marking, guards all intact");
+// 6. Regression: a "Plan: Titel" header with the title on the SAME line must
+// still be extracted and persisted (strict "Plan:\n" regex silently dropped it)
+const titledPlan = {
+	role: "assistant",
+	content: [
+		{ type: "text", text: "Plan: Jev-Loop Prototyp\n\n1. Repo anlegen\n2. Env kapseln\n3. Loop bauen" },
+	],
+};
+await emit("agent_end", { messages: [titledPlan] }, baseCtx);
+const savedPlans = readdirSync(path.join(tmp, ".pi", "plans"));
+if (!savedPlans.some((f) => f.includes("repo-anlegen"))) {
+	throw new Error(`titled plan not persisted, dir contains: ${savedPlans.join(", ")}`);
+}
+
+console.log("SMOKE OK — tool activation, thinking scan, marking, guards, titled-plan persistence all intact");

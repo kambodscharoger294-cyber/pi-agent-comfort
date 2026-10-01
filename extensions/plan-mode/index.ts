@@ -20,7 +20,7 @@ import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
+import { extractTodoItems, isSafeCommand, markCompletedSteps, PLAN_HEADER_RE, type TodoItem } from "./utils.ts";
 
 // Tools
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls"];
@@ -170,7 +170,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	}
 
 	function planSectionText(message: string): string {
-		const headerMatch = message.match(/\*{0,2}Plan:\*{0,2}\s*\n/i);
+		const headerMatch = message.match(PLAN_HEADER_RE);
 		if (!headerMatch) return "";
 		return message.slice(message.indexOf(headerMatch[0]) + headerMatch[0].length).trim();
 	}
