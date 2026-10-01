@@ -19,12 +19,15 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
 
 // Tools
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
-const PLAN_MODE_DISABLED_TOOLS = new Set<string>(["edit", "write", "subagent"]);
+// plan_done is disabled in plan mode: it only makes sense while a plan is
+// being executed, and a stale active entry must never leak into plan mode.
+const PLAN_MODE_DISABLED_TOOLS = new Set<string>(["edit", "write", "subagent", "plan_done"]);
 const PLAN_MANAGED_TOOLS = new Set<string>([...PLAN_MODE_TOOLS, ...NORMAL_MODE_TOOLS]);
 
 interface PlanModeState {
@@ -38,6 +41,19 @@ interface PlanModeState {
 // Type guard for assistant messages
 function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
 	return m.role === "assistant" && Array.isArray(m.content);
+}
+
+// Text that [DONE:n] scanning should cover: visible text plus thinking.
+// Some models announce or emit the markers only inside their thinking block,
+// which silently broke progress tracking (see plan-mode execution logs).
+function getScannableText(message: AssistantMessage): string {
+	return message.content
+		.map((block) => {
+			if (block.type === "text") return block.text;
+			if (block.type === "thinking") return block.thinking ?? "";
+			return "";
+		})
+		.join("\n");
 }
 
 // Extract text content from an assistant message
@@ -187,6 +203,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify("Plan mode enabled. Built-in write tools disabled.");
 		} else {
 			restoreNormalModeTools();
+			// plan_done is execution-only: drop it whenever execution stops
+			pi.setActiveTools(pi.getActiveTools().filter((n) => n !== "plan_done"));
 			ctx.ui.notify("Plan mode disabled. Full access restored.");
 		}
 		updateStatus(ctx);
@@ -213,6 +231,49 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.registerShortcut(Key.ctrlAlt("p"), {
 		description: "Toggle plan mode",
 		handler: async (ctx) => togglePlanMode(ctx),
+	});
+
+	// Structured progress marker for plan execution. Tool calls are far more
+	// reliable than [DONE:n] text tags: some models never emit the tags in
+	// their visible response (they announce them in thinking and then forget
+	// them), which left every todo unchecked for a whole multi-hour run.
+	const PlanDoneParams = Type.Object({
+		step: Type.Number({
+			description: "Number of the plan step that was just completed (the N in 'N. …' of the executing plan)",
+			minimum: 1,
+		}),
+	});
+	// defaultActive: false — the tool is only activated (setActiveTools) while a
+	// plan is executing, so the model never sees it outside execution mode.
+	pi.registerTool({
+		name: "plan_done",
+		label: "Plan step done",
+		description:
+			"Mark a plan step as completed while a plan is being executed. Call this immediately after finishing step N, once per step.",
+		promptSnippet: "Mark the completed plan step during plan execution.",
+		parameters: PlanDoneParams,
+		defaultActive: false,
+		annotations: { readOnlyHint: true, idempotentHint: true },
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const item = todoItems.find((t) => t.step === params.step);
+			if (!item) {
+				return {
+					output: `No plan step ${params.step}. Current plan has ${todoItems.length} step(s).`,
+				};
+			}
+			const wasNew = !item.completed;
+			item.completed = true;
+			updateStatus(ctx as ExtensionContext);
+			if (wasNew) {
+				// Keep the persisted plan file's progress section in sync
+				if (currentPlanFile) persistPlanFile(lastPlanText ?? "", todoItems, false);
+				persistState();
+			}
+			const done = todoItems.filter((t) => t.completed).length;
+			return {
+				output: `Step ${params.step} marked done (${done}/${todoItems.length}).`,
+			};
+		},
 	});
 
 	// Block destructive bash commands in plan mode
@@ -288,16 +349,25 @@ Do not use the subagent tool while in plan mode.`,
 		if (executionMode && todoItems.length > 0) {
 			const remaining = todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
+			// Re-state completed steps on every run: after a compaction the old
+			// [DONE:n] markers are gone from the transcript, and without this
+			// list the model would redo finished work.
+			const doneList = todoItems.filter((t) => t.completed).map((t) => t.step);
+			const doneInfo = doneList.length > 0 ? `Already completed (do NOT redo): step ${doneList.join(", ")}` : "No steps completed yet.";
 			return {
 				message: {
 					customType: "plan-execution-context",
 					content: `[EXECUTING PLAN - Full tool access enabled]
 
+${doneInfo}
+
 Remaining steps:
 ${todoList}
 
 Execute each step in order.
-After completing a step, include a [DONE:n] tag in your response.`,
+After completing step N, IMMEDIATELY report it by calling the plan_done tool with {"step": N} (e.g. after finishing step 3 call plan_done with {"step": 3}).
+If the plan_done tool is not available, put the marker [DONE:N] at the end of your response instead (e.g. [DONE:3]).
+Do not claim the plan is finished while steps are still unchecked.`,
 					display: false,
 				},
 			};
@@ -309,7 +379,8 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		if (!executionMode || todoItems.length === 0) return;
 		if (!isAssistantMessage(event.message)) return;
 
-		const text = getTextContent(event.message);
+		// Scan visible text AND thinking blocks for [DONE:n] fallback markers
+		const text = getScannableText(event.message);
 		if (markCompletedSteps(text, todoItems) > 0) {
 			updateStatus(ctx);
 			// Keep the persisted plan file's progress section in sync
@@ -354,6 +425,8 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			planModeEnabled = false;
 			executionMode = true;
 			restoreNormalModeTools();
+			// Expose the structured progress marker only while executing
+			pi.setActiveTools(uniqueToolNames([...pi.getActiveTools(), "plan_done"]));
 			updateStatus(ctx);
 			persistState();
 
@@ -364,7 +437,8 @@ Remaining steps:
 ${remainingList}
 
 Start with: ${firstTodoItem.text}
-After completing a step, include a [DONE:n] tag in your response.`;
+After completing step N, immediately call the plan_done tool with {"step": N} (e.g. {"step": 1} for the first step).
+If the plan_done tool is not available, end your response with [DONE:N] instead (e.g. [DONE:1]).`;
 			pi.sendMessage(planTodoListMessage, { deliverAs: "followUp" });
 			pi.sendMessage(
 				{ customType: "plan-mode-execute", content: execMessage, display: true },
@@ -498,12 +572,15 @@ After completing a step, include a [DONE:n] tag in your response.`;
 					messages.push(entry.message as AssistantMessage);
 				}
 			}
-			const allText = messages.map(getTextContent).join("\n");
+			const allText = messages.map(getScannableText).join("\n");
 			markCompletedSteps(allText, todoItems);
 		}
 
 		if (planModeEnabled) {
 			enablePlanModeTools();
+		} else if (executionMode) {
+			// Resumed mid-execution: re-expose the progress marker tool
+			pi.setActiveTools(uniqueToolNames([...pi.getActiveTools(), "plan_done"]));
 		}
 		updateStatus(ctx);
 	});

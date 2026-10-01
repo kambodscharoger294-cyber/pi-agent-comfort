@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { isSafeCommand, extractTodoItems, extractDoneSteps, markCompletedSteps } from "../extensions/plan-mode/utils.ts";
-
 // The allowlist is the security-relevant part of plan mode: in plan mode the
 // agent must be able to look, but not to change anything.
 
@@ -124,5 +123,42 @@ describe("plan parsing", () => {
 
 	test("returns nothing when there is no Plan: header", () => {
 		expect(extractTodoItems("Just a normal answer without a plan.").length).toBe(0);
+	});
+});
+
+describe("[DONE:n] scanning", () => {
+	function todos(count: number) {
+		return Array.from({ length: count }, (_, i) => ({ step: i + 1, text: `Step ${i + 1}`, completed: false }));
+	}
+
+	test("scans thinking text: markers announced only in thinking still count (regression)", () => {
+		// A model once announced "Let me write the final response with [DONE:n] tags"
+		// in its thinking and then never emitted them in the visible text — progress
+		// tracking must therefore also cover thinking blocks. The execution path
+		// concatenates text + thinking before calling markCompletedSteps.
+		const items = todos(3);
+		const visibleText = "Alles grün. Zusammenfassung: …";
+		const thinking = "Steps 1 and 2 are verified working. Marking them: [DONE:1] [DONE:2]";
+		const marked = markCompletedSteps(`${visibleText}\n${thinking}`, items);
+		expect(marked).toBe(2);
+		expect(items[0].completed).toBe(true);
+		expect(items[1].completed).toBe(true);
+		expect(items[2].completed).toBe(false);
+	});
+
+	test("does not match the [DONE:n] placeholder from the instructions", () => {
+		// The injected instructions contain the literal placeholder "[DONE:n]";
+		// it must never tick a step.
+		const items = todos(2);
+		expect(markCompletedSteps("After completing a step, include a [DONE:n] tag.", items)).toBe(0);
+		expect(items.every((t) => !t.completed)).toBe(true);
+	});
+
+	test("is idempotent: re-scanning the same text keeps completion state", () => {
+		const items = todos(2);
+		markCompletedSteps("first part [DONE:2]", items);
+		markCompletedSteps("still there [DONE:2]", items);
+		expect(items[1].completed).toBe(true);
+		expect(items[0].completed).toBe(false);
 	});
 });

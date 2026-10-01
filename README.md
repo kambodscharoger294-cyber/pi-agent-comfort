@@ -19,7 +19,7 @@ between global and project scope).
 
 | Extension | What it does |
 |---|---|
-| `plan-mode/` | Read-only analysis mode. Write tools are disabled, bash is restricted to an allowlist of read-only commands, and the plan is written to `.pi/plans/plan-<date>-<slug>.md` automatically. Progress is tracked with `[DONE:n]` markers and shown in a widget. Commands: `/plan`, `/todos`, `/plan-next` (`Ctrl+Alt+P` toggles). |
+| `plan-mode/` | Read-only analysis mode. Write tools are disabled, bash is restricted to an allowlist of read-only commands, and the plan is written to `.pi/plans/plan-<date>-<slug>.md` automatically. Progress is tracked via the `plan_done` tool (`[DONE:n]` markers as fallback) and shown in a widget. Commands: `/plan`, `/todos`, `/plan-next` (`Ctrl+Alt+P` toggles). |
 | `one-line.ts` | Collapses every tool block to exactly one line: `$ <command>  ✓ Took 0.3s [truncated]`. While a tool runs, and when expanded with `Ctrl+O`, the normal pi rendering is passed through unchanged. Rendering only — tool behaviour is untouched. |
 | `credits-footer.ts` | Replaces the footer with the session cost *and* the remaining credit balance (`$0.123/$10.75`). Refreshes on start, after each response (at most every 60 s) and every 5 minutes. Command: `/credits`. |
 
@@ -35,8 +35,16 @@ with an explanation, including the disguised variants: `find … -delete`,
 The plan is not just chat text. The extension writes it to
 `<project>/.pi/plans/plan-YYYYMMDD-HHMM-<slug>.md` (falling back to
 `~/.pi/agent/plans/`), so refining a plan updates the same file and the
-progress section stays in sync with the `[DONE:n]` markers. The extension
+progress section stays in sync with the completed steps. The extension
 writes the file — the agent stays read-only.
+
+Progress is reported through the `plan_done` tool that is only active while
+a plan is executing: after finishing step N the agent calls
+`plan_done({"step": N})`, which is far more reliable than text markers —
+some models announce `[DONE:n]` in their thinking and then forget it in the
+response, which used to leave every step unchecked. `[DONE:n]` (in text or
+thinking) still works as a fallback, and already completed steps are
+re-stated on every run so a compaction cannot wipe the progress.
 
 ```bash
 /plan          # toggle plan mode

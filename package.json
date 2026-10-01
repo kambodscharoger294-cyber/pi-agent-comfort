@@ -18,6 +18,6 @@
     "extensions": ["./extensions"]
   },
   "scripts": {
-    "test": "bun test tests/"
+    "test": "bun test tests/allowlist.test.ts && bun tests/plan-mode.test.ts"
   }
 }
