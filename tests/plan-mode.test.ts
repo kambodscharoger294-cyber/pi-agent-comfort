@@ -85,12 +85,14 @@ await emit("turn_end", {
 //    and rejects unknown steps
 const tool = registered.tool;
 if (!tool || tool.name !== "plan_done") throw new Error("plan_done tool not registered");
+const resultText = (r: { content?: Array<{ type: string; text?: string }> }) =>
+	(r.content ?? []).map((c) => c.text ?? "").join("");
 const marked = await tool.execute("t1", { step: 2 }, undefined, undefined, baseCtx);
-if (!marked.output.includes("2/3")) throw new Error(`plan_done marking failed: ${marked.output}`);
+if (!resultText(marked).includes("2/3")) throw new Error(`plan_done marking failed: ${resultText(marked)}`);
 const repeat = await tool.execute("t2", { step: 2 }, undefined, undefined, baseCtx);
-if (!repeat.output.includes("2/3")) throw new Error("plan_done not idempotent");
+if (!resultText(repeat).includes("2/3")) throw new Error("plan_done not idempotent");
 const unknown = await tool.execute("t3", { step: 9 }, undefined, undefined, baseCtx);
-if (!unknown.output.includes("No plan step 9")) throw new Error("unknown-step guard failed");
+if (!resultText(unknown).includes("No plan step 9")) throw new Error("unknown-step guard failed");
 
 // 5. In normal (non-execution) mode plan_done is dropped again
 await toggle();

@@ -258,7 +258,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			const item = todoItems.find((t) => t.step === params.step);
 			if (!item) {
 				return {
-					output: `No plan step ${params.step}. Current plan has ${todoItems.length} step(s).`,
+					content: [
+						{ type: "text", text: `No plan step ${params.step}. Current plan has ${todoItems.length} step(s).` },
+					],
 				};
 			}
 			const wasNew = !item.completed;
@@ -271,7 +273,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 			const done = todoItems.filter((t) => t.completed).length;
 			return {
-				output: `Step ${params.step} marked done (${done}/${todoItems.length}).`,
+				content: [{ type: "text", text: `Step ${params.step} marked done (${done}/${todoItems.length}).` }],
 			};
 		},
 	});
